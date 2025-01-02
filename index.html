@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Converter</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+            background-color: #f0f2f5;
+        }
+        .container {
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #1a1a1a;
+            margin-bottom: 2rem;
+        }
+        .textarea {
+            width: 100%;
+            min-height: 150px;
+            margin: 1rem 0;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            font-family: monospace;
+            resize: vertical;
+        }
+        .controls {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .radio-group {
+            display: flex;
+            gap: 1rem;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        .radio-group label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        .button-group {
+            display: flex;
+            gap: 1rem;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            background: #0066cc;
+            color: white;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .error {
+            color: #dc2626;
+            text-align: center;
+            margin: 1rem 0;
+            padding: 0.5rem;
+            border-radius: 4px;
+            background: #fee2e2;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Text Converter</h1>
+        
+        <textarea id="inputText" class="textarea" placeholder="Enter text to convert..."></textarea>
+        
+        <div class="controls">
+            <div class="radio-group">
+                <label>
+                    <input type="radio" name="conversion" value="none" checked>
+                    No conversion
+                </label>
+                <label>
+                    <input type="radio" name="conversion" value="base64">
+                    Base64
+                </label>
+                <label>
+                    <input type="radio" name="conversion" value="base32k">
+                    Base-32k
+                </label>
+                <label>
+                    <input type="radio" name="conversion" value="gzip">
+                    GZip
+                </label>
+                <label>
+                    <input type="radio" name="conversion" value="lzma">
+                    LZMA
+                </label>
+            </div>
+            
+            <div class="button-group">
+                <button onclick="convert(false)">Convert</button>
+                <button onclick="convert(true)">Unconvert</button>
+            </div>
+        </div>
+        
+        <textarea id="outputText" class="textarea" placeholder="Converted text will appear here..."></textarea>
+        
+        <div id="error" class="error"></div>
+    </div>
+
+    <!-- External libraries -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lzma/2.3.2/lzma.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Base64/1.1.0/base64.min.js"></script>
+
+    <script>
+        // Utility functions
+        function binaryToString(uint8Array) {
+            return Array.from(uint8Array).join(',');
+        }
+
+        function stringToBinary(str) {
+            return new Uint8Array(str.split(',').map(Number));
+        }
+
+        function showError(message) {
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            setTimeout(() => {
+                errorDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        // Main conversion function
+        async function convert(isReverse) {
+            const inputElem = document.getElementById(isReverse ? 'outputText' : 'inputText');
+            const outputElem = document.getElementById(isReverse ? 'inputText' : 'outputText');
+            const conversionType = document.querySelector('input[name="conversion"]:checked').value;
+            const text = inputElem.value;
+
+            try {
+                let result = '';
+
+                switch (conversionType) {
+                    case 'none':
+                        result = text;
+                        break;
+
+                    case 'base64':
+                        result = isReverse ? atob(text) : btoa(text);
+                        break;
+
+                    case 'gzip':
+                        if (isReverse) {
+                            try {
+                                const compressed = stringToBinary(text);
+                                const decompressed = pako.inflate(compressed, { to: 'string' });
+                                result = decompressed;
+                            } catch (e) {
+                                throw new Error('Invalid compressed data format. Expected comma-separated bytes.');
+                            }
+                        } else {
+                            const compressed = pako.deflate(text);
+                            result = binaryToString(compressed);
+                        }
+                        break;
+
+                    case 'lzma':
+                        if (isReverse) {
+                            try {
+                                const compressed = text.split(',').map(Number);
+                                result = await new Promise((resolve, reject) => {
+                                    LZMA.decompress(compressed, (result, error) => {
+                                        if (error) reject(error);
+                                        else resolve(result);
+                                    });
+                                });
+                            } catch (e) {
+                                throw new Error('Invalid compressed data format. Expected comma-separated bytes.');
+                            }
+                        } else {
+                            result = await new Promise((resolve, reject) => {
+                                LZMA.compress(text, 9, (result, error) => {
+                                    if (error) reject(error);
+                                    else resolve(binaryToString(result));
+                                });
+                            });
+                        }
+                        break;
+
+                    default:
+                        throw new Error('Unknown conversion type');
+                }
+
+                outputElem.value = result;
+            } catch (err) {
+                showError('Conversion failed: ' + err.message);
+            }
+        }
+    </script>
+</body>
+</html>
