@@ -1,215 +1,460 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Text Converter</title>
-    <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            max-width: 800px;
-            margin: 2rem auto;
-            padding: 0 1rem;
-            background-color: #f0f2f5;
-        }
-        .container {
-            background: white;
-            padding: 2rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #1a1a1a;
-            margin-bottom: 2rem;
-        }
-        .textarea {
-            width: 100%;
-            min-height: 150px;
-            margin: 1rem 0;
-            padding: 0.5rem;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-            font-family: monospace;
-            resize: vertical;
-        }
-        .controls {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            gap: 1rem;
-            margin: 1rem 0;
-        }
-        .radio-group {
-            display: flex;
-            gap: 1rem;
-            flex-wrap: wrap;
-            justify-content: center;
-        }
-        .radio-group label {
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            cursor: pointer;
-        }
-        .button-group {
-            display: flex;
-            gap: 1rem;
-        }
-        button {
-            padding: 0.5rem 1rem;
-            border: none;
-            border-radius: 4px;
-            background: #0066cc;
-            color: white;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-        button:hover {
-            background: #0052a3;
-        }
-        .error {
-            color: #dc2626;
-            text-align: center;
-            margin: 1rem 0;
-            padding: 0.5rem;
-            border-radius: 4px;
-            background: #fee2e2;
-            display: none;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Text Converter (Smart RLE + Unicode Byte Option)</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      max-width: 800px;
+      margin: 2rem auto;
+      padding: 0 1rem;
+      background-color: #f0f2f5;
+    }
+    .container {
+      background: white;
+      padding: 2rem;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #1a1a1a;
+      margin-bottom: 2rem;
+    }
+    .textarea-container {
+      position: relative;
+      margin: 1rem 0;
+    }
+    .textarea {
+      width: 100%;
+      min-height: 150px;
+      padding: 0.5rem;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-family: monospace;
+      resize: vertical;
+    }
+    .char-count {
+      position: absolute;
+      right: 0;
+      bottom: -1.5rem;
+      font-size: 0.875rem;
+      color: #666;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1rem;
+      margin: 1rem 0;
+    }
+    .radio-group {
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+    .radio-group label {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      cursor: pointer;
+    }
+    .button-group {
+      display: flex;
+      gap: 1rem;
+    }
+    button {
+      padding: 0.5rem 1rem;
+      border: none;
+      border-radius: 4px;
+      background: #0066cc;
+      color: white;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    button:hover {
+      background: #0052a3;
+    }
+    .error {
+      color: #dc2626;
+      text-align: center;
+      margin: 1rem 0;
+      padding: 0.5rem;
+      border-radius: 4px;
+      background: #fee2e2;
+      display: none;
+    }
+    .rle-buttons {
+      display: flex;
+      justify-content: space-between;
+      margin: 0.5rem 0;
+    }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Text Converter</h1>
-        
-        <textarea id="inputText" class="textarea" placeholder="Enter text to convert..."></textarea>
-        
-        <div class="controls">
-            <div class="radio-group">
-                <label>
-                    <input type="radio" name="conversion" value="none" checked>
-                    No conversion
-                </label>
-                <label>
-                    <input type="radio" name="conversion" value="base64">
-                    Base64
-                </label>
-                <label>
-                    <input type="radio" name="conversion" value="base32k">
-                    Base-32k
-                </label>
-                <label>
-                    <input type="radio" name="conversion" value="gzip">
-                    GZip
-                </label>
-                <label>
-                    <input type="radio" name="conversion" value="lzma">
-                    LZMA
-                </label>
-            </div>
-            
-            <div class="button-group">
-                <button onclick="convert(false)">Convert</button>
-                <button onclick="convert(true)">Unconvert</button>
-            </div>
-        </div>
-        
-        <textarea id="outputText" class="textarea" placeholder="Converted text will appear here..."></textarea>
-        
-        <div id="error" class="error"></div>
+  <div class="container">
+    <h1>Text Converter (Smart RLE + Unicode Byte Option)</h1>
+
+    <!-- Top Textarea + RLE Button -->
+    <div class="textarea-container">
+      <textarea
+        id="inputText"
+        class="textarea"
+        placeholder="Enter text to convert..."
+        oninput="updateCharCount('inputText', 'inputCount')"
+      ></textarea>
+      <div class="char-count">Characters: <span id="inputCount">0</span></div>
+    </div>
+    <div class="rle-buttons">
+      <button onclick="toggleRLE('inputText')">RLE (top)</button>
     </div>
 
-    <!-- External libraries -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/lzma/2.3.2/lzma.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Base64/1.1.0/base64.min.js"></script>
+    <!-- Conversion controls -->
+    <div class="controls">
+      <div class="radio-group">
+        <label>
+          <input type="radio" name="conversion" value="none" checked />
+          No conversion
+        </label>
+        <label>
+          <input type="radio" name="conversion" value="base64" />
+          Base64
+        </label>
+        <label>
+          <input type="radio" name="conversion" value="base32k" />
+          Base-32k
+        </label>
+        <label>
+          <input type="radio" name="conversion" value="gzip" />
+          GZip
+        </label>
+        <label>
+          <input type="radio" name="conversion" value="lzma" />
+          LZMA
+        </label>
+      </div>
 
-    <script>
-        // Utility functions
-        function binaryToString(uint8Array) {
-            return Array.from(uint8Array).join(',');
+      <!-- Checkbox for GZip & LZMA byte representation -->
+      <div style="text-align:center; margin: 1rem 0;">
+        <label>
+          <input type="checkbox" id="useUnicodeBytes">
+          Use single Unicode character per byte (for GZip and LZMA)
+        </label>
+      </div>
+
+      <div class="button-group">
+        <button onclick="convert(false)">Convert</button>
+        <button onclick="convert(true)">Unconvert</button>
+      </div>
+    </div>
+
+    <!-- Bottom Textarea + RLE Button -->
+    <div class="textarea-container">
+      <textarea
+        id="outputText"
+        class="textarea"
+        placeholder="Converted text will appear here..."
+        oninput="updateCharCount('outputText', 'outputCount')"
+      ></textarea>
+      <div class="char-count">Characters: <span id="outputCount">0</span></div>
+    </div>
+    <div class="rle-buttons">
+      <button onclick="toggleRLE('outputText')">RLE (bottom)</button>
+    </div>
+
+    <!-- Error display -->
+    <div id="error" class="error"></div>
+  </div>
+
+  <!-- External libraries -->
+  <script src="./pako-2.1.0.min.js"></script>
+  <script src="./lzma-min.js"></script>
+
+  <script>
+    /************************************************************
+     * LZMA init
+     ************************************************************/
+    let my_lzma;
+    document.addEventListener('DOMContentLoaded', function() {
+      // Adjust worker path if needed
+      my_lzma = new LZMA("./lzma_worker.js");
+
+      // Initialize char counters
+      updateCharCount('inputText', 'inputCount');
+      updateCharCount('outputText', 'outputCount');
+    });
+
+    /************************************************************
+     * SMART RLE toggle button
+     ************************************************************/
+    // We'll add "RLEv1:" to indicate data is run-length-encoded.
+    // If we see that prefix, we decode. Otherwise, we encode with the "smart" approach.
+    function toggleRLE(textareaId) {
+      const textarea = document.getElementById(textareaId);
+      const originalText = textarea.value;
+
+      if (originalText.startsWith("RLEv1:")) {
+        // It's RLE-encoded, so decode it
+        const encodedPart = originalText.slice(6); // remove "RLEv1:"
+        textarea.value = rleDecode(encodedPart);
+      } else {
+        // Not RLE-encoded yet, so encode
+        textarea.value = "RLEv1:" + rleEncodeSmart(originalText);
+      }
+      
+      updateCharCount(textareaId, (textareaId === 'inputText') ? 'inputCount' : 'outputCount');
+    }
+
+    /**
+     * Smart RLE encoder:
+     * - Identify consecutive runs of the same character.
+     * - Check if encoding them as "char + count" is strictly shorter than the raw run.
+     *   => encoded_length = 1 + length(count in decimal)
+     *   => only encode if encoded_length < run_length
+     */
+    function rleEncodeSmart(str) {
+      if (!str) return '';
+      let result = '';
+      let currentChar = str[0];
+      let count = 1;
+
+      for (let i = 1; i < str.length; i++) {
+        if (str[i] === currentChar) {
+          count++;
+        } else {
+          result += encodeOrRaw(currentChar, count);
+          currentChar = str[i];
+          count = 1;
         }
+      }
+      // final run
+      result += encodeOrRaw(currentChar, count);
+      return result;
+    }
 
-        function stringToBinary(str) {
-            return new Uint8Array(str.split(',').map(Number));
+    // helper: returns either "char + count" or repeated char, whichever is smaller
+    function encodeOrRaw(ch, count) {
+      const encoded = ch + String(count);     // e.g. "a5"
+      return (encoded.length < count)
+        ? encoded
+        : ch.repeat(count); 
+    }
+
+    // RLE decode: parse "a5b3xxx" => expand
+    // we might have raw single characters if the run wasn't shorter to encode
+    function rleDecode(str) {
+      if (!str) return '';
+      let decoded = '';
+      let i = 0;
+      while (i < str.length) {
+        const ch = str[i++];
+        // attempt to parse a number
+        let digits = '';
+        while (i < str.length && /\d/.test(str[i])) {
+          digits += str[i++];
         }
-
-        function showError(message) {
-            const errorDiv = document.getElementById('error');
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            setTimeout(() => {
-                errorDiv.style.display = 'none';
-            }, 5000);
+        if (digits.length > 0) {
+          // we have e.g. "a5"
+          const count = parseInt(digits, 10);
+          decoded += ch.repeat(count);
+        } else {
+          // no digits => single char
+          decoded += ch;
         }
+      }
+      return decoded;
+    }
 
-        // Main conversion function
-        async function convert(isReverse) {
-            const inputElem = document.getElementById(isReverse ? 'outputText' : 'inputText');
-            const outputElem = document.getElementById(isReverse ? 'inputText' : 'outputText');
-            const conversionType = document.querySelector('input[name="conversion"]:checked').value;
-            const text = inputElem.value;
+    /************************************************************
+     * Base32k Implementation
+     ************************************************************/
+    // (For reference, original "base32k" conversions remain unchanged.)
+    const base32k = {
+      chars: Array.from({ length: 32768 }, (_, i) => String.fromCharCode(i + 0x4E00)),
+      encode: function(text) {
+        const bytes = new TextEncoder().encode(text);
+        let result = '';
+        for (let i = 0; i < bytes.length; i += 1.875) {
+          let value = 0;
+          for (let j = 0; j < 1.875 && i + j < bytes.length; j++) {
+            value = value * 256 + bytes[Math.floor(i + j)];
+          }
+          result += this.chars[value % 32768];
+        }
+        return result;
+      },
+      decode: function(encoded) {
+        const bytes = [];
+        for (let i = 0; i < encoded.length; i++) {
+          const value = this.chars.indexOf(encoded[i]);
+          if (value === -1) throw new Error('Invalid Base32k character');
+          const chunk = [];
+          let temp = value;
+          while (temp > 0) {
+            chunk.unshift(temp % 256);
+            temp = Math.floor(temp / 256);
+          }
+          bytes.push(...chunk);
+        }
+        return new TextDecoder().decode(new Uint8Array(bytes));
+      }
+    };
 
-            try {
-                let result = '';
+    /************************************************************
+     * Single-byte <-> Unicode helper
+     ************************************************************/
+    // We'll re-use the first 256 characters of base32k.chars for 0..255:
+    function bytesToUnicodeChars(bytes) {
+      let str = "";
+      for (let i = 0; i < bytes.length; i++) {
+        let b = bytes[i];
+        str += base32k.chars[b];
+      }
+      return str;
+    }
 
-                switch (conversionType) {
-                    case 'none':
-                        result = text;
-                        break;
+    function unicodeCharsToBytes(str) {
+      let arr = new Uint8Array(str.length);
+      for (let i = 0; i < str.length; i++) {
+        let b = base32k.chars.indexOf(str[i]);
+        if (b < 0) {
+          throw new Error("Invalid character in single-byte base32k at position " + i);
+        }
+        arr[i] = b;
+      }
+      return arr;
+    }
 
-                    case 'base64':
-                        result = isReverse ? atob(text) : btoa(text);
-                        break;
+    /************************************************************
+     * Misc Helpers
+     ************************************************************/
+    function updateCharCount(textareaId, counterId) {
+      const textarea = document.getElementById(textareaId);
+      const counter = document.getElementById(counterId);
+      counter.textContent = textarea.value.length;
+    }
 
-                    case 'gzip':
-                        if (isReverse) {
-                            try {
-                                const compressed = stringToBinary(text);
-                                const decompressed = pako.inflate(compressed, { to: 'string' });
-                                result = decompressed;
-                            } catch (e) {
-                                throw new Error('Invalid compressed data format. Expected comma-separated bytes.');
-                            }
-                        } else {
-                            const compressed = pako.deflate(text);
-                            result = binaryToString(compressed);
-                        }
-                        break;
+    function showError(message) {
+      const errorDiv = document.getElementById('error');
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+      setTimeout(() => {
+        errorDiv.style.display = 'none';
+      }, 5000);
+    }
 
-                    case 'lzma':
-                        if (isReverse) {
-                            try {
-                                const compressed = text.split(',').map(Number);
-                                result = await new Promise((resolve, reject) => {
-                                    LZMA.decompress(compressed, (result, error) => {
-                                        if (error) reject(error);
-                                        else resolve(result);
-                                    });
-                                });
-                            } catch (e) {
-                                throw new Error('Invalid compressed data format. Expected comma-separated bytes.');
-                            }
-                        } else {
-                            result = await new Promise((resolve, reject) => {
-                                LZMA.compress(text, 9, (result, error) => {
-                                    if (error) reject(error);
-                                    else resolve(binaryToString(result));
-                                });
-                            });
-                        }
-                        break;
+    // ASCII-based (comma-separated) bytes
+    function binaryToString(uint8Array) {
+      return Array.from(uint8Array).join(',');
+    }
+    function stringToBinary(str) {
+      return new Uint8Array(str.split(',').map(Number));
+    }
 
-                    default:
-                        throw new Error('Unknown conversion type');
-                }
+    /************************************************************
+     * Main Convert Function
+     ************************************************************/
+    function convert(isReverse) {
+      const inputElem  = document.getElementById(isReverse ? 'outputText' : 'inputText');
+      const outputElem = document.getElementById(isReverse ? 'inputText'  : 'outputText');
+      const conversionType = document.querySelector('input[name="conversion"]:checked').value;
+      const useUnicode = document.getElementById('useUnicodeBytes').checked; // <-- Key for GZip & LZMA
+      const text = inputElem.value;
 
-                outputElem.value = result;
-            } catch (err) {
-                showError('Conversion failed: ' + err.message);
+      try {
+        let result = '';
+
+        switch (conversionType) {
+          case 'none':
+            result = text;
+            break;
+
+          case 'base64':
+            result = isReverse ? atob(text) : btoa(text);
+            break;
+
+          case 'base32k':
+            result = isReverse ? base32k.decode(text) : base32k.encode(text);
+            break;
+
+          case 'gzip':
+            if (isReverse) {
+              // Decompress
+              let compressedBytes;
+              if (useUnicode) {
+                compressedBytes = unicodeCharsToBytes(text);
+              } else {
+                compressedBytes = stringToBinary(text);
+              }
+              result = pako.inflate(compressedBytes, { to: 'string' });
+            } else {
+              // Compress
+              const compressed = pako.deflate(text);
+              if (useUnicode) {
+                result = bytesToUnicodeChars(compressed);
+              } else {
+                result = binaryToString(compressed);
+              }
             }
+            break;
+
+          case 'lzma':
+            if (!my_lzma) {
+              throw new Error('LZMA library not initialized properly');
+            }
+            if (isReverse) {
+              let compressedBytes;
+              if (useUnicode) {
+                compressedBytes = unicodeCharsToBytes(text);
+              } else {
+                compressedBytes = stringToBinary(text);
+              }
+              my_lzma.decompress(
+                Array.from(compressedBytes),
+                function onDecompressComplete(decompressed) {
+                  outputElem.value = decompressed;
+                  updateCharCount('outputText', 'outputCount');
+                },
+                function onDecompressProgress(percent) {
+                  console.log('Decompressing:', (percent * 100) + '%');
+                }
+              );
+              return; // skip below
+            } else {
+              my_lzma.compress(
+                text,
+                1,
+                function onCompressComplete(compressed) {
+                  const compressedArr = new Uint8Array(compressed);
+                  if (useUnicode) {
+                    outputElem.value = bytesToUnicodeChars(compressedArr);
+                  } else {
+                    outputElem.value = binaryToString(compressedArr);
+                  }
+                  updateCharCount('outputText', 'outputCount');
+                },
+                function onCompressProgress(percent) {
+                  console.log('Compressing:', (percent * 100) + '%');
+                }
+              );
+              return; // skip below
+            }
+
+          default:
+            throw new Error('Unknown conversion type');
         }
-    </script>
+
+        // If we get here, we've handled it without LZMA callbacks
+        outputElem.value = result;
+        updateCharCount('outputText', 'outputCount');
+
+      } catch (err) {
+        showError('Conversion failed: ' + err.message);
+      }
+    }
+  </script>
 </body>
 </html>
