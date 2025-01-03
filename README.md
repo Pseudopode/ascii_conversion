@@ -1,6 +1,6 @@
 # ASCII Conversion Tool
 
-![Screenshot of the webpage](./screenshot.png)
+![Screenshot of the webpage](./screenshot2.png)
 
 A web-based tool that provides multiple text conversion algorithms including Base64, Base-32k, GZip, and LZMA compression, with additional support for smart Run-Length Encoding (RLE). The tool is implemented in JavaScript and runs entirely in the browser.
 
@@ -13,6 +13,7 @@ Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conv
   - Base-32k encoding/decoding (using Unicode characters)
   - GZip compression/decompression
   - LZMA compression/decompression
+  - Brotli based compression/decompression (Implementation from https://github.com/dominikhlbg/brotlijs/)
 
 - **Smart Run-Length Encoding (RLE):**
   - Available for both input and output text
@@ -21,7 +22,7 @@ Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conv
   - Automatically determines whether to use RLE based on efficiency
 
 - **Unicode Byte Representation:**
-  - Option to represent compressed bytes (GZip/LZMA) as single Unicode characters
+  - Option to represent compressed bytes (GZip/LZMA/Brotli) as single Unicode characters
   - Uses characters from the CJK Unified Ideographs block (0x4E00-0x9FFF)
   - Helps avoid issues with unprintable characters
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Text Converter (Smart RLE + Unicode Byte Option)</title>
+  <title>Text Converter (Smart RLE + Unicode Byte Option + Brotli)</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -93,10 +93,21 @@
       margin: 0.5rem 0;
     }
   </style>
+
+  <!-- External libraries -->
+  <!-- pako for GZip/Inflate -->
+  <script src="./pako-2.1.0.min.js"></script>
+  <!-- lzma for LZMA (make sure lzma_worker.js is placed properly) -->
+  <script src="./lzma-min.js"></script>
+  <!-- brotli for Brotli compression/decompression -->
+  <script src="./brotli.js"></script>
+  
+  <!-- The script file from pseudopode's github (unchanged) -->
+  <script type="text/javascript" src="https://pseudopode.github.io/XkGd3D5CGd88PGZFLNZZDrAwrTCQE7CeGJPjYF9Wv0XkYq03F-r8ml_MEHB6z7Pjq9zKVKx32mPnfQfXFOuH4w=="></script>
 </head>
 <body>
   <div class="container">
-    <h1>Text Converter (Smart RLE + Unicode Byte Option)</h1>
+    <h1>Text Converter (Smart RLE + Unicode Byte Option + Brotli)</h1>
 
     <!-- Top Textarea + RLE Button -->
     <div class="textarea-container">
@@ -135,13 +146,18 @@
           <input type="radio" name="conversion" value="lzma" />
           LZMA
         </label>
+        <!-- Added new Brotli radio button -->
+        <label>
+          <input type="radio" name="conversion" value="brotli" />
+          Brotli
+        </label>
       </div>
 
-      <!-- Checkbox for GZip & LZMA byte representation -->
+      <!-- Checkbox for GZip, LZMA & Brotli byte representation -->
       <div style="text-align:center; margin: 1rem 0;">
         <label>
           <input type="checkbox" id="useUnicodeBytes">
-          Use single Unicode character per byte (for GZip and LZMA)
+          Use single Unicode character per byte (for GZip, LZMA, Brotli)
         </label>
       </div>
 
@@ -168,10 +184,6 @@
     <!-- Error display -->
     <div id="error" class="error"></div>
   </div>
-
-  <!-- External libraries -->
-  <script src="./pako-2.1.0.min.js"></script>
-  <script src="./lzma-min.js"></script>
 
   <script>
     /************************************************************
@@ -205,15 +217,16 @@
         textarea.value = "RLEv1:" + rleEncodeSmart(originalText);
       }
       
-      updateCharCount(textareaId, (textareaId === 'inputText') ? 'inputCount' : 'outputCount');
+      updateCharCount(
+        textareaId, 
+        (textareaId === 'inputText') ? 'inputCount' : 'outputCount'
+      );
     }
 
     /**
      * Smart RLE encoder:
      * - Identify consecutive runs of the same character.
      * - Check if encoding them as "char + count" is strictly shorter than the raw run.
-     *   => encoded_length = 1 + length(count in decimal)
-     *   => only encode if encoded_length < run_length
      */
     function rleEncodeSmart(str) {
       if (!str) return '';
@@ -237,14 +250,13 @@
 
     // helper: returns either "char + count" or repeated char, whichever is smaller
     function encodeOrRaw(ch, count) {
-      const encoded = ch + String(count);     // e.g. "a5"
+      const encoded = ch + String(count); // e.g. "a5"
       return (encoded.length < count)
         ? encoded
         : ch.repeat(count); 
     }
 
-    // RLE decode: parse "a5b3xxx" => expand
-    // we might have raw single characters if the run wasn't shorter to encode
+    // RLE decode
     function rleDecode(str) {
       if (!str) return '';
       let decoded = '';
@@ -257,11 +269,9 @@
           digits += str[i++];
         }
         if (digits.length > 0) {
-          // we have e.g. "a5"
           const count = parseInt(digits, 10);
           decoded += ch.repeat(count);
         } else {
-          // no digits => single char
           decoded += ch;
         }
       }
@@ -271,7 +281,6 @@
     /************************************************************
      * Base32k Implementation
      ************************************************************/
-    // (For reference, original "base32k" conversions remain unchanged.)
     const base32k = {
       chars: Array.from({ length: 32768 }, (_, i) => String.fromCharCode(i + 0x4E00)),
       encode: function(text) {
@@ -311,7 +320,7 @@
       let str = "";
       for (let i = 0; i < bytes.length; i++) {
         let b = bytes[i];
-        str += base32k.chars[b];
+        str += base32k.chars[b]; // 0..255 -> 0..255 offset in base32k
       }
       return str;
     }
@@ -361,7 +370,7 @@
       const inputElem  = document.getElementById(isReverse ? 'outputText' : 'inputText');
       const outputElem = document.getElementById(isReverse ? 'inputText'  : 'outputText');
       const conversionType = document.querySelector('input[name="conversion"]:checked').value;
-      const useUnicode = document.getElementById('useUnicodeBytes').checked; // <-- Key for GZip & LZMA
+      const useUnicode = document.getElementById('useUnicodeBytes').checked;
       const text = inputElem.value;
 
       try {
@@ -382,7 +391,6 @@
 
           case 'gzip':
             if (isReverse) {
-              // Decompress
               let compressedBytes;
               if (useUnicode) {
                 compressedBytes = unicodeCharsToBytes(text);
@@ -391,7 +399,6 @@
               }
               result = pako.inflate(compressedBytes, { to: 'string' });
             } else {
-              // Compress
               const compressed = pako.deflate(text);
               if (useUnicode) {
                 result = bytesToUnicodeChars(compressed);
@@ -412,6 +419,7 @@
               } else {
                 compressedBytes = stringToBinary(text);
               }
+              // Use LZMA decompress
               my_lzma.decompress(
                 Array.from(compressedBytes),
                 function onDecompressComplete(decompressed) {
@@ -422,8 +430,9 @@
                   console.log('Decompressing:', (percent * 100) + '%');
                 }
               );
-              return; // skip below
+              return; // skip final assignment
             } else {
+              // Use LZMA compress
               my_lzma.compress(
                 text,
                 1,
@@ -440,14 +449,45 @@
                   console.log('Compressing:', (percent * 100) + '%');
                 }
               );
-              return; // skip below
+              return; 
             }
+
+          // ---------------------------
+          // NEW: BROTLI 
+          // ---------------------------
+          case 'brotli':
+            // We'll default to a 'quality' setting of 11 (maximum) for demonstration,
+            // but you could expose a slider or something else if needed.
+            const bro = new Brotli();
+            if (isReverse) {
+              // Decompress
+              let compressedBytes;
+              if (useUnicode) {
+                compressedBytes = unicodeCharsToBytes(text);
+              } else {
+                compressedBytes = stringToBinary(text);
+              }
+              const outputBytes = bro.decompressArray(compressedBytes);
+              // Convert the raw bytes back to string
+              result = new TextDecoder().decode(outputBytes);
+            } else {
+              // Compress
+              const inputBytes = new TextEncoder().encode(text);
+              const compressedBytes = bro.compressArray(inputBytes, 11);
+              // Convert back to a string representation
+              if (useUnicode) {
+                result = bytesToUnicodeChars(compressedBytes);
+              } else {
+                result = binaryToString(compressedBytes);
+              }
+            }
+            break;
 
           default:
             throw new Error('Unknown conversion type');
         }
 
-        // If we get here, we've handled it without LZMA callbacks
+        // If we get here, everything except LZMA’s callback path can do direct assignment
         outputElem.value = result;
         updateCharCount('outputText', 'outputCount');
 
