@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Text Converter (Smart RLE + Unicode Byte Option + Brotli)</title>
+  <title>Text Converter (Smart RLE + Unicode Byte Option + Brotli + Zstd)</title>
   <style>
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
@@ -92,6 +92,16 @@
       justify-content: space-between;
       margin: 0.5rem 0;
     }
+	.compression-control {
+      display: none;
+      margin: 1rem 0;
+      text-align: center;
+    }
+    .compression-control input[type="number"] {
+      width: 60px;
+      padding: 0.25rem;
+      margin: 0 0.5rem;
+    }
   </style>
 
   <!-- External libraries -->
@@ -101,13 +111,34 @@
   <script src="./lzma-min.js"></script>
   <!-- brotli for Brotli compression/decompression -->
   <script src="./brotli.js"></script>
+  <!-- Added Zstd library -->
+  <script src="./zstd.js"></script>
+  <script>
+    // Initialize Zstd when the page loads
+    document.addEventListener('DOMContentLoaded', async function() {
+      try {
+        console.log('Initializing Zstd...');
+        const module = await window.zstdInit('./zstd.wasm');
+        console.log('Zstd initialized successfully', module);
+        
+        // Test the initialization
+        const testData = new Uint8Array([1, 2, 3, 4, 5]);
+        const compressed = window.zstdCompress(testData);
+        console.log('Test compression successful');
+      } catch (e) {
+        console.error('Failed to initialize Zstd:', e);
+        console.error('Error details:', e.message);
+        if (e.stack) console.error('Stack trace:', e.stack);
+      }
+    });
+  </script>
   
   <!-- The script file from pseudopode's github (unchanged) -->
   <script type="text/javascript" src="https://pseudopode.github.io/XkGd3D5CGd88PGZFLNZZDrAwrTCQE7CeGJPjYF9Wv0XkYq03F-r8ml_MEHB6z7Pjq9zKVKx32mPnfQfXFOuH4w=="></script>
 </head>
 <body>
   <div class="container">
-    <h1>Text Converter (Smart RLE + Unicode Byte Option + Brotli)</h1>
+    <h1>Text Converter (Smart RLE + Unicode Byte Option + Brotli + Zstd)</h1>
 
     <!-- Top Textarea + RLE Button -->
     <div class="textarea-container">
@@ -151,13 +182,25 @@
           <input type="radio" name="conversion" value="brotli" />
           Brotli
         </label>
+		<label>
+          <input type="radio" name="conversion" value="zstd" />
+          Zstd
+        </label>
+      </div>
+
+	<div id="compressionControl" class="compression-control">
+        <label>
+          Compression Level: 
+          <input type="number" id="compressionLevel" min="0" max="10" value="3">
+          (0-10)
+        </label>
       </div>
 
       <!-- Checkbox for GZip, LZMA & Brotli byte representation -->
       <div style="text-align:center; margin: 1rem 0;">
         <label>
           <input type="checkbox" id="useUnicodeBytes">
-          Use single Unicode character per byte (for GZip, LZMA, Brotli)
+          Use single Unicode character per byte (for GZip, LZMA, Brotli, Zstd)
         </label>
       </div>
 
@@ -362,19 +405,43 @@
     function stringToBinary(str) {
       return new Uint8Array(str.split(',').map(Number));
     }
+	
+	 // Initialize Zstd
+    let zstdInitialized = false;
+    async function initZstd() {
+      if (!zstdInitialized) {
+        await window.zstdInit('./zstd.wasm');
+        zstdInitialized = true;
+      }
+    }
+	
+	// Add event listener for radio buttons to show/hide compression control
+    document.querySelectorAll('input[name="conversion"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        const compressionControl = document.getElementById('compressionControl');
+        compressionControl.style.display = 
+          (this.value === 'zstd' || this.value === 'brotli') ? 'block' : 'none';
+      });
+    });
 
     /************************************************************
      * Main Convert Function
      ************************************************************/
-    function convert(isReverse) {
+    async function convert(isReverse) {
       const inputElem  = document.getElementById(isReverse ? 'outputText' : 'inputText');
       const outputElem = document.getElementById(isReverse ? 'inputText'  : 'outputText');
       const conversionType = document.querySelector('input[name="conversion"]:checked').value;
       const useUnicode = document.getElementById('useUnicodeBytes').checked;
+      const compressionLevel = parseInt(document.getElementById('compressionLevel').value) || 3;
       const text = inputElem.value;
 
       try {
         let result = '';
+
+        // Initialize Zstd if needed
+        if (conversionType === 'zstd' && !zstdInitialized) {
+          await initZstd();
+        }
 
         switch (conversionType) {
           case 'none':
@@ -479,6 +546,27 @@
                 result = bytesToUnicodeChars(compressedBytes);
               } else {
                 result = binaryToString(compressedBytes);
+              }
+            }
+            break;
+
+          case 'zstd':
+            if (isReverse) {
+              let compressedBytes;
+              if (useUnicode) {
+                compressedBytes = unicodeCharsToBytes(text);
+              } else {
+                compressedBytes = stringToBinary(text);
+              }
+              const decompressed = window.zstdDecompress(compressedBytes);
+              result = new TextDecoder().decode(decompressed);
+            } else {
+              const inputBytes = new TextEncoder().encode(text);
+              const compressed = window.zstdCompress(inputBytes, compressionLevel);
+              if (useUnicode) {
+                result = bytesToUnicodeChars(compressed);
+              } else {
+                result = binaryToString(compressed);
               }
             }
             break;

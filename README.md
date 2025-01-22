@@ -1,8 +1,8 @@
 # ASCII Conversion Tool
 
-![Screenshot of the webpage](./screenshot2.png)
+![Screenshot of the webpage](./screenshot3.png)
 
-A web-based tool that provides multiple text conversion algorithms including Base64, Base-32k, GZip, and LZMA compression, with additional support for smart Run-Length Encoding (RLE). The tool is implemented in JavaScript and runs entirely in the browser.
+A web-based tool that provides multiple text conversion algorithms including Base64, Base-32k, GZip, LZMA, Brotli, and Zstd compression, with additional support for smart Run-Length Encoding (RLE). The tool is implemented in JavaScript and runs entirely in the browser.
 
 Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conversion/)
 
@@ -14,6 +14,7 @@ Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conv
   - GZip compression/decompression
   - LZMA compression/decompression
   - Brotli based compression/decompression (Implementation from https://github.com/dominikhlbg/brotlijs/)
+  - Zstd compression/decompression (Implementation from https://github.com/bokuweb/zstd-wasm)
 
 - **Smart Run-Length Encoding (RLE):**
   - Available for both input and output text
@@ -22,7 +23,7 @@ Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conv
   - Automatically determines whether to use RLE based on efficiency
 
 - **Unicode Byte Representation:**
-  - Option to represent compressed bytes (GZip/LZMA/Brotli) as single Unicode characters
+  - Option to represent compressed bytes (GZip/LZMA/Brotli/Zstd) as single Unicode characters
   - Uses characters from the CJK Unified Ideographs block (0x4E00-0x9FFF)
   - Helps avoid issues with unprintable characters
 
@@ -31,6 +32,7 @@ Try it out here: [ASCII Conversion Tool](https://pseudopode.github.io/ascii_conv
   - Error handling with temporary error messages
   - Responsive design
   - Clear conversion controls
+  - Adjustable compression levels for Brotli and Zstd
 
 ## Implementation Details
 
@@ -43,9 +45,15 @@ The tool uses a smart RLE algorithm that:
 ### Base-32k Encoding
 Utilizes Unicode characters (starting at 0x4E00) to encode data more efficiently than Base64, using approximately 15 bits per character instead of 6 bits.
 
+### Compression Options
+- **Zstd**: Offers configurable compression levels (0-10) with level 3 as default, providing a good balance between compression ratio and speed
+- **Brotli**: Supports quality settings from 0 to 11 for fine-tuned compression
+
 ## Libraries Used
 - `pako` (v2.1.0) - For GZip compression
 - `lzma-min.js` - For LZMA compression
+- `brotli.js` - For Brotli compression/decompression
+- `zstd-wasm` - For Zstd compression/decompression (from @bokuweb/zstd-wasm)
 - Web Workers (`lzma_worker.js`) - For asynchronous LZMA processing
 
 ## Development
@@ -60,6 +68,7 @@ The tool requires a modern browser with support for:
 - TextEncoder/TextDecoder APIs
 - Web Workers
 - ES6+ JavaScript features
+- WebAssembly (for Zstd compression)
 
 ## License
 
