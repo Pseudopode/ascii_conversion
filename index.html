@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Text Converter (Font/BG/Styles + Tofu Encoding) + Magic String</title>
+  <title>Debug Version: Text Converter (No Text Style Bits)</title>
 
   <style>
     body {
@@ -68,7 +68,7 @@
     .compression-control {
       margin: 0.5rem 0;
       text-align: center;
-      display: none; /* hidden by default */
+      display: none; /* shown only for Brotli or Zstd */
     }
     .compression-control input[type="number"] {
       width: 60px;
@@ -111,7 +111,7 @@
   <!-- External libraries -->
   <!-- pako for GZip/Inflate -->
   <script src="./pako-2.1.0.min.js"></script>
-  <!-- LZMA (adjust path to lzma_worker.js if needed) -->
+  <!-- LZMA (adjust path if needed) -->
   <script src="./lzma-min.js"></script>
   <!-- brotli -->
   <script src="./brotli.js"></script>
@@ -122,710 +122,658 @@
   <script type="text/javascript" src="https://pseudopode.github.io/XkGd3D5CGd88PGZFLNZZDrAwrTCQE7CeGJPjYF9Wv0XkYq03F-r8ml_MEHB6z7Pjq9zKVKx32mPnfQfXFOuH4w=="></script>
 
   <script>
-    /************************************************************
-     * Page Initialization
-     ************************************************************/
-    let my_lzma; 
+    let my_lzma;
     let zstdInitialized = false;
 
     document.addEventListener('DOMContentLoaded', async () => {
+      // Initialize Zstd
       try {
-        // Initialize Zstd
+        console.log("[DEBUG] Initializing Zstd...");
         await window.zstdInit('./zstd.wasm');
         zstdInitialized = true;
-        console.log('Zstd initialized.');
+        console.log("[DEBUG] Zstd initialized successfully.");
       } catch(e){
-        console.error('Zstd init failed:', e);
+        console.error("[DEBUG] Zstd init failed:", e);
       }
 
       // Initialize LZMA
+      console.log("[DEBUG] Initializing LZMA...");
       my_lzma = new LZMA("./lzma_worker.js");
 
       // Setup counters
       updateCharCount('inputText','inputCount');
       updateCharCount('outputText','outputCount');
 
-      // Setup radio event listeners
+      // Show/hide compression level for Brotli or Zstd
       const compressionControl = document.getElementById('compressionControl');
-      const compLevelInput     = document.getElementById('compressionLevel');
+      const compLevelInput = document.getElementById('compressionLevel');
       document.querySelectorAll('input[name="conversion"]').forEach(radio => {
         radio.addEventListener('change', function() {
-          if (this.value === 'brotli') {
-            // Show control, clamp range 0..10, default=3
-            compressionControl.style.display = 'block';
-            compLevelInput.min = '0';
-            compLevelInput.max = '10';
-            if (parseInt(compLevelInput.value,10) > 10) {
-              compLevelInput.value = '3';
-            }
+          if(this.value==='brotli'){
+            compressionControl.style.display='block';
+            compLevelInput.min='0'; 
+            compLevelInput.max='10';
+            let val= parseInt(compLevelInput.value,10);
+            if(isNaN(val)||val<0) val=0;
+            if(val>10) val=10;
+            compLevelInput.value= String(val);
+            console.log("[DEBUG] Brotli => compression level range 0..10 => now:", compLevelInput.value);
           }
-          else if (this.value === 'zstd') {
-            // Show control, no max, default=10
-            compressionControl.style.display = 'block';
-            compLevelInput.min = '0';
+          else if(this.value==='zstd'){
+            compressionControl.style.display='block';
+            compLevelInput.min='0';
             compLevelInput.removeAttribute('max');
-            if (parseInt(compLevelInput.value,10) < 1) {
-              compLevelInput.value = '10';
-            }
+            let val= parseInt(compLevelInput.value,10);
+            if(isNaN(val)||val<0) val=10;
+            compLevelInput.value= String(val);
+            console.log("[DEBUG] Zstd => no max => level now:", compLevelInput.value);
           }
           else {
-            // Hide control
-            compressionControl.style.display = 'none';
+            compressionControl.style.display='none';
           }
         });
       });
     });
 
-    // For completeness, in case user initially selects "brotli" or "zstd":
     function clampCompressionLevelIfNeeded() {
       const conv = document.querySelector('input[name="conversion"]:checked')?.value;
-      const compLevelInput = document.getElementById('compressionLevel');
-      if (!conv) return;
-      if (conv==='brotli') {
-        let val = parseInt(compLevelInput.value, 10);
-        if (val<0 || isNaN(val)) val=0;
-        if (val>10) val=10;
-        compLevelInput.value=String(val);
+      const compLevelInput= document.getElementById('compressionLevel');
+      if(!conv) return;
+      let val= parseInt(compLevelInput.value,10);
+      if(isNaN(val)) val=0;
+
+      if(conv==='brotli'){
+        if(val<0) val=0;
+        if(val>10) val=10;
+      } else if(conv==='zstd'){
+        if(val<0) val=10;
       }
-      else if (conv==='zstd') {
-        let val = parseInt(compLevelInput.value, 10);
-        if (val<0 || isNaN(val)) val=10;
-        // no max
-        compLevelInput.value=String(val);
-      }
-      else {
-        // do nothing
-      }
+      compLevelInput.value= String(val);
+      console.log("[DEBUG] clampCompressionLevelIfNeeded => conv:", conv, " => level:", compLevelInput.value);
     }
 
     /************************************************************
-     * Character Count & Error Handling
+     * updateCharCount & showError
      ************************************************************/
-    function updateCharCount(textareaId, counterId) {
+    function updateCharCount(textareaId, counterId){
       const el = document.getElementById(textareaId);
       const counter = document.getElementById(counterId);
-      const text = (el.tagName === 'TEXTAREA') ? el.value : el.textContent;
-      counter.textContent = text.length;
+      const text = (el.tagName==='TEXTAREA')? el.value: el.textContent;
+      counter.textContent= text.length;
     }
-
-    function showError(msg) {
-      const errorDiv = document.getElementById('error');
-      errorDiv.textContent = msg;
-      errorDiv.style.display = 'block';
-      setTimeout(() => { errorDiv.style.display = 'none'; }, 5000);
+    function showError(msg){
+      console.error("[DEBUG] showError =>", msg);
+      const errorDiv= document.getElementById('error');
+      errorDiv.textContent= msg;
+      errorDiv.style.display= 'block';
+      setTimeout(()=>{ errorDiv.style.display='none'; },7000);
     }
 
     /************************************************************
-     * RLE Helpers
+     * RLE
      ************************************************************/
-    function toggleRLE(id) {
-      const el = document.getElementById(id);
-      const str = (el.tagName === 'TEXTAREA') ? el.value : el.textContent;
-      if (str.startsWith("RLEv1:")) {
-        const decoded = rleDecode(str.slice(6));
-        if (el.tagName === 'TEXTAREA') el.value = decoded; else el.textContent = decoded;
+    function toggleRLE(id){
+      console.log("[DEBUG] toggleRLE => id:", id);
+      const el= document.getElementById(id);
+      const str= (el.tagName==='TEXTAREA')? el.value: el.textContent;
+      if(str.startsWith("RLEv1:")){
+        console.log("[DEBUG] Found RLE => decode");
+        const decoded= rleDecode(str.slice(6));
+        if(el.tagName==='TEXTAREA') el.value= decoded; else el.textContent= decoded;
       } else {
-        const encoded = "RLEv1:" + rleEncodeSmart(str);
-        if (el.tagName === 'TEXTAREA') el.value = encoded; else el.textContent = encoded;
+        console.log("[DEBUG] No RLE => encode");
+        const encoded= "RLEv1:"+ rleEncodeSmart(str);
+        if(el.tagName==='TEXTAREA') el.value= encoded; else el.textContent= encoded;
       }
       updateCharCount(id, (id==='inputText')?'inputCount':'outputCount');
     }
-
-    function rleEncodeSmart(str) {
-      if (!str) return '';
-      let out = '';
-      let char0 = str[0], count = 1;
-      for (let i=1; i<str.length; i++){
-        if (str[i] === char0) count++;
+    function rleEncodeSmart(str){
+      console.log("[DEBUG] rleEncodeSmart => len:", str.length);
+      if(!str) return '';
+      let out='';
+      let c0=str[0], count=1;
+      for(let i=1;i<str.length;i++){
+        if(str[i]===c0) count++;
         else {
-          out += encodeOrRaw(char0, count);
-          char0 = str[i];
-          count = 1;
+          out+= encodeOrRaw(c0,count);
+          c0=str[i]; count=1;
         }
       }
-      out += encodeOrRaw(char0, count);
+      out+= encodeOrRaw(c0,count);
       return out;
     }
-    function encodeOrRaw(ch, count) {
-      const enc = ch + String(count);
-      return (enc.length < count) ? enc : ch.repeat(count);
+    function encodeOrRaw(ch, count){
+      const enc= ch+ String(count);
+      return (enc.length<count)? enc: ch.repeat(count);
     }
     function rleDecode(str){
       if(!str) return '';
-      let i=0, out='';
+      let i=0,out='';
       while(i<str.length){
         const ch=str[i++];
         let digits='';
-        while(i<str.length && /\d/.test(str[i])) digits+=str[i++];
-        if(digits) out+=ch.repeat(parseInt(digits,10));
-        else out+=ch;
+        while(i<str.length && /\d/.test(str[i])) digits+= str[i++];
+        if(digits) out+= ch.repeat(parseInt(digits,10));
+        else out+= ch;
       }
       return out;
     }
 
-
     /************************************************************
-     * BASE32K & BINARY
+     * Base32k & Binary
      ************************************************************/
     const base32k = {
       chars: Array.from({ length: 32768 }, (_, i) => String.fromCharCode(i + 0x4E00))
     };
-
-    function bytesToUnicodeChars(bytes) {
+    function bytesToUnicodeChars(bytes){
+      console.log("[DEBUG] bytesToUnicodeChars => length:", bytes.length);
       let s='';
-      for(let b of bytes) s += base32k.chars[b];
+      for(let b of bytes) s+= base32k.chars[b];
       return s;
     }
-    function unicodeCharsToBytes(str) {
-      const arr = new Uint8Array(str.length);
-      for(let i=0; i<str.length; i++){
-        const idx = base32k.chars.indexOf(str[i]);
+    function unicodeCharsToBytes(str){
+      console.log("[DEBUG] unicodeCharsToBytes => length:", str.length);
+      const arr= new Uint8Array(str.length);
+      for(let i=0;i<str.length;i++){
+        const idx= base32k.chars.indexOf(str[i]);
         if(idx<0) throw new Error("Invalid char in single-byte mode at pos "+i);
-        arr[i] = idx;
+        arr[i]= idx;
       }
       return arr;
     }
-
-    function binaryToString(u8) {
+    function binaryToString(u8){
+      console.log("[DEBUG] binaryToString => length:", u8.length);
       return [...u8].join(',');
     }
     function stringToBinary(str){
+      console.log("[DEBUG] stringToBinary => input len:", str.length);
       return new Uint8Array(str.split(',').map(Number));
     }
-
     function base32kEncode(txt){
-      const bytes = new TextEncoder().encode(txt);
-      let out = '';
+      console.log("[DEBUG] base32kEncode => txt len:", txt.length);
+      const bytes= new TextEncoder().encode(txt);
+      let out='';
       for(let i=0;i<bytes.length;i++){
-        out += base32k.chars[bytes[i]];
+        out+= base32k.chars[bytes[i]];
       }
       return out;
     }
     function base32kDecode(enc){
-      const arr = new Uint8Array(enc.length);
+      console.log("[DEBUG] base32kDecode => enc len:", enc.length);
+      const arr= new Uint8Array(enc.length);
       for(let i=0;i<enc.length;i++){
-        arr[i] = base32k.chars.indexOf(enc[i]);
+        arr[i]= base32k.chars.indexOf(enc[i]);
       }
       return new TextDecoder().decode(arr);
     }
 
+    /************************************************************
+     * Tofu (2 bytes -> 1 code point)
+     ************************************************************/
+    const TOFU_BASE=0x100000; // plane 16 private use
 
     /************************************************************
-     * Font Families (for style bits)
+     * Font color & background color
      ************************************************************/
-    const FONT_FAMILIES = [
-      "Arial",          // 0
-      "Times New Roman",// 1
-      "Courier New",    // 2
-      "Verdana",        // 3
-      "Monospace"       // 4
-      // up to 15 if you wish
-    ];
-
-    /************************************************************
-     * Tofu (2 bytes -> 1 code point in Plane 16)
-     * Range: U+100000..U+10FFFF => 65536 possible code points
-     ************************************************************/
-    const TOFU_BASE = 0x100000; // start of Plane 16 private use
-
-    function twoBytesToCodePoint(hi, lo){
-      const val = ((hi << 8) | lo) & 0xFFFF; // 0..65535
-      return TOFU_BASE + val;
-    }
-    function codePointToTwoBytes(cp){
-      const val = cp - TOFU_BASE;
-      if(val < 0 || val > 0xFFFF){
-        throw new Error("Invalid tofu code point: 0x"+cp.toString(16));
-      }
-      return [(val>>>8)&0xFF, val&0xFF];
-    }
-
-    /************************************************************
-     * Color & Style Implementation
-     ************************************************************/
-    function bytesToColor(r,g,b) {
+    function bytesToColor(r,g,b){
       return `rgb(${r},${g},${b})`;
     }
-    function colorToBytes(str) {
-      const m = str.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+    function colorToBytes(str){
+      const m=str.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
       if(!m) return [0,0,0];
       return [parseInt(m[1]), parseInt(m[2]), parseInt(m[3])];
     }
 
-    // style byte bits: bit0=bold, bit1=italic, bit2=underline, bit3=strike, bits4..7=font family
-    function decodeStyleBits(styleByte){
-      if(styleByte===undefined) return "";
-      const bold       = (styleByte & 0x01) !== 0;
-      const italic     = (styleByte & 0x02) !== 0;
-      const underline  = (styleByte & 0x04) !== 0;
-      const strike     = (styleByte & 0x08) !== 0;
-      const fontCode   = (styleByte >> 4) & 0x0F;
+    /************************************************************
+     * makeStyledSpans + parseStyledText
+     * (We removed any text style bits references.)
+     ************************************************************/
+    function makeStyledSpans(bytes, useTofu, useFont, useBg){
+      console.log("[DEBUG] makeStyledSpans => bytes.length:", bytes.length,
+        "tofu:",useTofu,"font:",useFont,"bg:",useBg);
 
-      let cssParts = [];
-      if(bold) cssParts.push("font-weight: bold;");
-      if(italic) cssParts.push("font-style: italic;");
-      if(underline && strike){
-        cssParts.push("text-decoration: underline line-through;");
-      } else if(underline){
-        cssParts.push("text-decoration: underline;");
-      } else if(strike){
-        cssParts.push("text-decoration: line-through;");
-      }
-      if(fontCode < FONT_FAMILIES.length){
-        cssParts.push(`font-family: '${FONT_FAMILIES[fontCode]}';`);
-      }
-      return cssParts.join(" ");
-    }
-
-    function encodeStyleBits(spanEl){
-      let styleByte=0;
-      // bold
-      if(spanEl.style.fontWeight==="bold") styleByte |= 0x01;
-      // italic
-      if(spanEl.style.fontStyle==="italic") styleByte |= 0x02;
-      // underline/strike
-      const dec = (spanEl.style.textDecoration||"").toLowerCase();
-      if(dec.includes("underline"))    styleByte |= 0x04;
-      if(dec.includes("line-through")) styleByte |= 0x08;
-      // font-family
-      let ff = (spanEl.style.fontFamily||"").replace(/['"]/g,"").trim().toLowerCase();
-      let code = FONT_FAMILIES.findIndex(f => f.toLowerCase()===ff);
-      if(code<0) code=0;
-      styleByte |= (code<<4);
-      return styleByte;
-    }
-
-    // Create one <span> for the "character" + optional color & style
-    function createStyledSpan(char, fontRGB, bgRGB, styleByte) {
-      const colorCss = fontRGB? `color: rgb(${fontRGB.join(",")});` : "";
-      const bgCss    = bgRGB?   `background-color: rgb(${bgRGB.join(",")});` : "";
-      const styCss   = (styleByte!==undefined)? decodeStyleBits(styleByte) : "";
-      const styleStr = (colorCss+" "+bgCss+" "+styCss).trim();
-      return `<span style="${styleStr}">${char}</span>`;
-    }
-
-    // Build HTML from array of bytes (one "span" per chunk)
-    // chunk size depends on: tofu(2 or 1), font(3?), bg(3?), style(1?)
-    function makeStyledSpans(bytes, useTofu, useFont, useBg, useSty) {
-      const charSize = useTofu? 2: 1;
-      const chunkSize = charSize + (useFont?3:0) + (useBg?3:0) + (useSty?1:0);
+      // chunk size = char(1 or2) + font color(3 if useFont) + bg color(3 if useBg)
+      const charSize= useTofu? 2: 1;
+      const chunkSize= charSize + (useFont?3:0) + (useBg?3:0);
+      console.log("[DEBUG] chunkSize =>",chunkSize);
 
       let html='';
-      for(let i=0; i<bytes.length; i+=chunkSize){
-        let codePoint=0, charByte1= bytes[i];
-        let offset= charSize;
+      let i=0, chunkIndex=0;
+      while(i<bytes.length){
+        console.log("[DEBUG] chunk #", chunkIndex, "start i=",i);
+        let codePoint=0;
         if(useTofu){
-          // need 2 bytes for code point
-          const hi = charByte1 || 0;
-          const lo = bytes[i+1] || 0;
-          codePoint = TOFU_BASE + ((hi<<8)|lo);
+          const hi=(i<bytes.length)?bytes[i]:0; i++;
+          const lo=(i<bytes.length)?bytes[i]:0; i++;
+          codePoint= TOFU_BASE + ((hi<<8)|lo);
         } else {
-          // single byte => base32k char
-          codePoint = 0x4E00 + charByte1; 
+          const cbyte=(i<bytes.length)?bytes[i]:0; i++;
+          codePoint= 0x4E00 + cbyte;
         }
-        const ch = String.fromCodePoint(codePoint);
+        const ch= String.fromCodePoint(codePoint);
 
-        // optional font color
         let fontRGB=null;
         if(useFont){
-          const r= bytes[i+offset]||0;
-          const g= bytes[i+offset+1]||0;
-          const b= bytes[i+offset+2]||0;
-          offset+=3;
+          const r=(i<bytes.length)? bytes[i]:0; i++;
+          const g=(i<bytes.length)? bytes[i]:0; i++;
+          const b=(i<bytes.length)? bytes[i]:0; i++;
           fontRGB=[r,g,b];
         }
-        // optional bg color
+
         let bgRGB=null;
         if(useBg){
-          const r2= bytes[i+offset]||255;
-          const g2= bytes[i+offset+1]||255;
-          const b2= bytes[i+offset+2]||255;
-          offset+=3;
+          const r2=(i<bytes.length)?bytes[i]:255; i++;
+          const g2=(i<bytes.length)?bytes[i]:255; i++;
+          const b2=(i<bytes.length)?bytes[i]:255; i++;
           bgRGB=[r2,g2,b2];
         }
-        // optional style
-        let styByte=undefined;
-        if(useSty){
-          styByte= bytes[i+offset]||0;
-          offset++;
-        }
 
-        html += createStyledSpan(ch, fontRGB, bgRGB, styByte);
+        console.log(`[DEBUG] chunk #${chunkIndex} => char=0x${codePoint.toString(16)}`+
+          ` => '${ch}', fontRGB=${fontRGB}, bgRGB=${bgRGB}`);
+
+        const colorCss= fontRGB? `color: rgb(${fontRGB.join(",")});`: "";
+        const bgCss= bgRGB? `background-color: rgb(${bgRGB.join(",")});`: "";
+        const finalCss= (colorCss+bgCss).trim();
+
+        html += `<span style="${finalCss}">${ch}</span>`;
+        chunkIndex++;
       }
       return html;
     }
 
-    // Parse from HTML <span> => raw bytes
-    function parseStyledText(html, useTofu, useFont, useBg, useSty) {
+    function parseStyledText(html, useTofu, useFont, useBg){
+      console.log("[DEBUG] parseStyledText => tofu:",useTofu,"font:",useFont,"bg:",useBg,
+        " => html length:", html.length);
       const div=document.createElement('div');
-      div.innerHTML=html;
-      const spans=div.getElementsByTagName('span');
+      div.innerHTML= html;
+      const spans= div.getElementsByTagName('span');
+      console.log("[DEBUG] parseStyledText => found spans =>", spans.length);
+
       const out=[];
-
-      for(let sp of spans){
-        const codePoints = [...sp.textContent]; 
-        if(codePoints.length !== 1){
-          throw new Error("Each span must contain exactly 1 displayed glyph!");
+      for(let idx=0; idx<spans.length; idx++){
+        const sp= spans[idx];
+        const codePoints=[...sp.textContent];
+        if(codePoints.length!==1){
+          console.warn("[DEBUG] parseStyledText => span #", idx," textContent:", sp.textContent," => not exactly 1 glyph");
+          throw new Error("Each span must have exactly 1 glyph!");
         }
-        const cp = codePoints[0].codePointAt(0);
+        const cp= codePoints[0].codePointAt(0);
+        console.log("[DEBUG] parseStyledText => span #", idx," codepoint=0x"+ cp.toString(16));
 
-        // decode the char portion
         if(useTofu){
-          const val = cp - TOFU_BASE;
-          if(val<0 || val>0xFFFF) {
-            throw new Error("Invalid tofu code point: "+ cp.toString(16));
+          const val= cp-TOFU_BASE;
+          if(val<0||val>0xFFFF){
+            console.error("[DEBUG] Tofu codepoint out of range:", cp.toString(16));
+            throw new Error("Invalid tofu code point: 0x"+ cp.toString(16));
           }
-          const hi= (val>>>8)&0xFF, lo= val&0xFF;
+          const hi=(val>>>8)&0xFF, lo= val&0xFF;
           out.push(hi, lo);
+          console.log("[DEBUG] => Tofu => hi=0x"+ hi.toString(16)+", lo=0x"+ lo.toString(16));
         } else {
-          const val= cp-0x4E00;
-          if(val<0 || val>0xFF){
-            throw new Error("Invalid base32k char code: "+ cp.toString(16));
+          const cbyte= cp-0x4E00;
+          if(cbyte<0||cbyte>0xFF){
+            console.error("[DEBUG] base32k char code out of range:", cbyte);
+            throw new Error("Invalid base32k char code: 0x"+ cp.toString(16));
           }
-          out.push(val);
+          out.push(cbyte);
+          console.log("[DEBUG] => base32k => cbyte=0x"+ cbyte.toString(16));
         }
 
-        // parse color if needed
         if(useFont){
           const fc= sp.style.color || 'rgb(0,0,0)';
-          out.push(... colorToBytes(fc));
+          const cArr= colorToBytes(fc);
+          out.push(... cArr);
+          console.log("[DEBUG] => font color =>", fc," =>", cArr);
         }
         if(useBg){
-          const bc= sp.style.backgroundColor || 'rgb(255,255,255)';
-          out.push(... colorToBytes(bc));
-        }
-        // parse style if needed
-        if(useSty){
-          const sty= encodeStyleBits(sp);
-          out.push(sty);
+          const bc= sp.style.backgroundColor||'rgb(255,255,255)';
+          const bArr= colorToBytes(bc);
+          out.push(... bArr);
+          console.log("[DEBUG] => bg color =>", bc," =>", bArr);
         }
       }
+      console.log("[DEBUG] parseStyledText => final out length:", out.length);
       return new Uint8Array(out);
     }
 
     /************************************************************
-     * LZMA, Zstd, Brotli
+     * initZstd
      ************************************************************/
-    async function initZstd() {
+    async function initZstd(){
+      console.log("[DEBUG] initZstd called...");
       if(!zstdInitialized){
         await window.zstdInit('./zstd.wasm');
-        zstdInitialized=true;
+        zstdInitialized= true;
       }
     }
 
     /************************************************************
      * Magic Prefix (MGK2 XXYY)
-     * We'll expand the flags to 5 bits:
-     *   bit0=useUnicode
-     *   bit1=useFont
-     *   bit2=useBg
-     *   bit3=useStyle
-     *   bit4=useTofu
-     * Then compType in top 3 bits => up to 8 types
+     * (We remove style bits from the flags)
      ************************************************************/
-    function buildMagicPrefix(compType, lvl, useUni, useFont, useBg, useSty, useTofu) {
-      // clamp lvl to [0..255]
-      const clamped = (lvl<0?0:(lvl>255?255:lvl))|0;
+    function buildMagicPrefix(compType, lvl, useUni, useFont, useBg, useTofu){
+      const clamped= Math.max(0, Math.min(255, lvl|0));
       let flags=0;
+      // bit0 => useUnicode
       if(useUni)  flags|=1<<0;
+      // bit1 => useFontColor
       if(useFont) flags|=1<<1;
+      // bit2 => useBgColor
       if(useBg)   flags|=1<<2;
-      if(useSty)  flags|=1<<3;
+      // bit3 => (was text style) => removed
+      // bit4 => useTofu
       if(useTofu) flags|=1<<4;
-      // type is 3 bits => shift left 5
-      const typeAndFlags = ((compType & 0x07)<<5) | (flags & 0x1F);
-      const xx = typeAndFlags.toString(16).padStart(2,'0');
-      const yy = clamped.toString(16).padStart(2,'0');
+
+      // top 3 bits => compType
+      const typeAndFlags= ((compType & 0x07)<<5)|(flags & 0x1F);
+      const xx= typeAndFlags.toString(16).padStart(2,'0');
+      const yy= clamped.toString(16).padStart(2,'0');
+      console.log("[DEBUG] buildMagicPrefix => compType:",compType," => xx:",xx,"yy:",yy);
       return `MGK2 ${xx}${yy}`;
     }
 
-    function parseMagicPrefix(str) {
+    function parseMagicPrefix(str){
+      console.log("[DEBUG] parseMagicPrefix => str.length:", str.length);
       if(!str.startsWith("MGK2 ")) return null;
-      const hex = str.slice(5,9);
+      const hex= str.slice(5,9);
+      console.log("[DEBUG] parseMagicPrefix => hex chunk:", hex);
       if(hex.length<4) return null;
-      const val = parseInt(hex,16);
+      const val= parseInt(hex,16);
       if(isNaN(val)) return null;
 
-      const typeAndFlags = (val>>8)&0xFF; 
-      const lvl          = val & 0xFF;
+      const typeAndFlags= (val>>8)&0xFF;
+      const lvl= val & 0xFF;
+      const compType= (typeAndFlags>>5)&0x07;
+      const flags= typeAndFlags&0x1F;
 
-      const compType = (typeAndFlags>>5) & 0x07; 
-      const flags    = typeAndFlags & 0x1F;
-
-      const useUni =  !!(flags & (1<<0));
-      const useFont= !!(flags & (1<<1));
-      const useBg  = !!(flags & (1<<2));
-      const useSty = !!(flags & (1<<3));
-      const useTofu= !!(flags & (1<<4));
+      console.log("[DEBUG] parseMagicPrefix => compType:",compType,"lvl:",lvl,"flags:",flags);
 
       return {
-        compType, 
+        compType,
         compressionLevel: lvl,
-        useUnicode: useUni,
-        useFontColor: useFont,
-        useBgColor: useBg,
-        useTextStyle: useSty,
-        useTofu
+        useUnicode:   !!(flags&(1<<0)),
+        useFontColor: !!(flags&(1<<1)),
+        useBgColor:   !!(flags&(1<<2)),
+        // bit3 => was style => removed
+        useTofu:      !!(flags&(1<<4))
       };
     }
 
     function retrieveSettingsFromData(){
+      console.log("[DEBUG] retrieveSettingsFromData");
       const outEl= document.getElementById('outputText');
-      const data = (outEl.tagName==='TEXTAREA') ? outEl.value : outEl.innerHTML;
+      const data= (outEl.tagName==='TEXTAREA')? outEl.value: outEl.innerHTML;
       const parsed= parseMagicPrefix(data);
       if(!parsed){
         alert("No short magic prefix found (MGK2 XXYY)!");
         return;
       }
-      const typeMap=['none','base64','base32k','gzip','lzma','brotli','zstd','extra'];
+      const typeMap= ['none','base64','base32k','gzip','lzma','brotli','zstd','extra'];
       const ctype= typeMap[parsed.compType]||'none';
+      console.log("[DEBUG] retrieved => compType:", ctype, " => prefix:",parsed);
 
-      // apply
       document.querySelectorAll('input[name="conversion"]').forEach(r=>{
         r.checked=(r.value===ctype);
       });
+
       const compCtrl= document.getElementById('compressionControl');
       const compLev= document.getElementById('compressionLevel');
       if(ctype==='brotli'){
         compCtrl.style.display='block';
         compLev.min='0'; compLev.max='10';
-        compLev.value= (parsed.compressionLevel>10? '10': String(parsed.compressionLevel));
-      }
-      else if(ctype==='zstd'){
+        compLev.value= (parsed.compressionLevel>10?'10':String(parsed.compressionLevel));
+      } else if(ctype==='zstd'){
         compCtrl.style.display='block';
         compLev.min='0';
         compLev.removeAttribute('max');
         compLev.value= String(parsed.compressionLevel||10);
-      }
-      else {
+      } else {
         compCtrl.style.display='none';
       }
 
-      document.getElementById('useUnicodeBytes').checked  = parsed.useUnicode;
-      document.getElementById('useFontColor').checked     = parsed.useFontColor;
-      document.getElementById('useBgColor').checked       = parsed.useBgColor;
-      document.getElementById('useTextStyle').checked     = parsed.useTextStyle;
-      document.getElementById('useTofu').checked          = parsed.useTofu;
+      document.getElementById('useUnicodeBytes').checked= parsed.useUnicode;
+      document.getElementById('useFontColor').checked=   parsed.useFontColor;
+      document.getElementById('useBgColor').checked=     parsed.useBgColor;
+      // style bits removed => no checkbox
+      document.getElementById('useTofu').checked=        parsed.useTofu;
 
       alert("Retrieved settings from magic prefix and applied to UI.");
+      console.log("[DEBUG] retrieve => done applying toggles");
     }
 
-
     /************************************************************
-     * Main Convert Function
+     * Main Convert
      ************************************************************/
     async function convert(isReverse){
-      clampCompressionLevelIfNeeded(); 
-      const inEl  = document.getElementById(isReverse?'outputText':'inputText');
-      const outEl = document.getElementById(isReverse?'inputText':'outputText');
+      clampCompressionLevelIfNeeded();
 
-      const conv  = document.querySelector('input[name="conversion"]:checked').value;
-      let level   = +document.getElementById('compressionLevel').value||0;
+      const inEl= document.getElementById(isReverse?'outputText':'inputText');
+      const outEl= document.getElementById(isReverse?'inputText':'outputText');
+
+      const conv= document.querySelector('input[name="conversion"]:checked').value;
+      let level= +document.getElementById('compressionLevel').value||0;
+
       const useUni= document.getElementById('useUnicodeBytes').checked;
       const useFont= document.getElementById('useFontColor').checked;
-      const useBg  = document.getElementById('useBgColor').checked;
-      const useSty = document.getElementById('useTextStyle').checked;
+      const useBg= document.getElementById('useBgColor').checked;
       const useTofu= document.getElementById('useTofu').checked;
 
-      // convert to numeric code
-      const typeMap={none:0, base64:1, base32k:2, gzip:3, lzma:4, brotli:5, zstd:6};
+      console.log("[DEBUG] convert => isReverse?", isReverse, "conv=",conv,"level=",level,
+        "useUni=",useUni,"useFont=",useFont,"useBg=",useBg,"useTofu=",useTofu);
+
+      const typeMap= {none:0, base64:1, base32k:2, gzip:3, lzma:4, brotli:5, zstd:6};
       const compType= typeMap[conv]||0;
 
-      // fetch text
-      const text= (inEl.tagName==='TEXTAREA') ? inEl.value : inEl.innerHTML;
+      const text= (inEl.tagName==='TEXTAREA')? inEl.value: inEl.innerHTML;
+      console.log("[DEBUG] input text length=", text.length);
 
-      function placeResult(finalStr){
+      function placeResult(str){
+        console.log("[DEBUG] placeResult => length:", str.length);
         if(outEl.tagName==='TEXTAREA'){
-          outEl.value= finalStr;
+          outEl.value= str;
         } else {
-          outEl.innerHTML= finalStr;
+          outEl.innerHTML= str;
         }
         updateCharCount(outEl.id, (outEl.id==='inputText')?'inputCount':'outputCount');
       }
 
       try {
-        if(conv==='zstd' && !zstdInitialized) await initZstd();
+        if(conv==='zstd' && !zstdInitialized){
+          console.log("[DEBUG] initZstd => calling...");
+          await initZstd();
+        }
 
-        // "none" => no magic prefix
         if(conv==='none'){
-          if(isReverse){
-            // unconvert => do nothing
-            placeResult(text);
-          } else {
-            // convert => do nothing
-            placeResult(text);
-          }
+          console.log("[DEBUG] No conversion => pass text as is");
+          if(isReverse) placeResult(text);
+          else placeResult(text);
           return;
         }
 
         if(isReverse){
-          // parse prefix
+          // decompress
+          console.log("[DEBUG] => Unconvert => method:", conv);
           const pfx= parseMagicPrefix(text);
-          let rawData= text; 
+          let rawData= text;
           if(pfx){
-            // remove the first 9 chars ("MGK2 xxXX") + possible space
+            console.log("[DEBUG] => found prefix => removing 'MGK2 xxYY'");
             rawData= text.slice(5+4).trimStart();
           }
           switch(conv){
             case 'base64': {
-              placeResult( atob(rawData) );
+              console.log("[DEBUG] => base64 => atob");
+              placeResult(atob(rawData));
             } break;
-
             case 'base32k': {
-              if(useFont||useBg||useSty||useTofu){
-                const arr= parseStyledText(rawData, useTofu, useFont, useBg, useSty);
-                const dec= new TextDecoder().decode(arr);
-                placeResult(dec);
+              if(useFont||useBg||useTofu){
+                console.log("[DEBUG] => parse color-coded base32k => parseStyledText => decode");
+                const arr= parseStyledText(rawData,useTofu,useFont,useBg);
+                console.log("[DEBUG] got compressed => arr.length=",arr.length);
+                const decStr= new TextDecoder().decode(arr);
+                console.log("[DEBUG] final uncompressed => length=", decStr.length);
+                placeResult(decStr);
               } else {
-                placeResult( base32kDecode(rawData) );
+                const dec= base32kDecode(rawData);
+                placeResult(dec);
               }
             } break;
-
             case 'gzip': {
-              const compressed= (useUni && (useFont||useBg||useSty||useTofu))
-                ? parseStyledText(rawData, useTofu, useFont, useBg, useSty)
-                : (useUni ? unicodeCharsToBytes(rawData) : stringToBinary(rawData));
-              const dec= pako.inflate(compressed, {to:'string'});
+              console.log("[DEBUG] => GZip => pako.inflate");
+              let compressed;
+              if(useUni && (useFont||useBg||useTofu)){
+                compressed= parseStyledText(rawData,useTofu,useFont,useBg);
+              } else if(useUni){
+                compressed= unicodeCharsToBytes(rawData);
+              } else {
+                compressed= stringToBinary(rawData);
+              }
+              console.log("[DEBUG] compressed.length=", compressed.length);
+              const dec= pako.inflate(compressed,{ to:'string'});
+              console.log("[DEBUG] pako.inflate => text length=", dec.length);
               placeResult(dec);
             } break;
-
             case 'lzma': {
               let cArr;
-              if(useUni && (useFont||useBg||useSty||useTofu)){
-                cArr= parseStyledText(rawData, useTofu, useFont, useBg, useSty);
+              if(useUni && (useFont||useBg||useTofu)){
+                cArr= parseStyledText(rawData,useTofu,useFont,useBg);
               } else if(useUni){
                 cArr= unicodeCharsToBytes(rawData);
               } else {
                 cArr= stringToBinary(rawData);
               }
+              console.log("[DEBUG] lzma => cArr.length=", cArr.length);
               my_lzma.decompress(
                 Array.from(cArr),
-                (decomp)=> placeResult(decomp),
-                (pct)=> console.log("Decompressing LZMA:", pct*100,"%")
+                dec=>{
+                  console.log("[DEBUG] LZMA => final length=", dec.length);
+                  placeResult(dec);
+                },
+                pct=> console.log("[DEBUG] LZMA decompress =>", pct*100,"%")
               );
             } break;
-
             case 'brotli': {
+              console.log("[DEBUG] => Brotli => decompressArray");
               const bro= new Brotli();
               let cArr;
-              if(useUni && (useFont||useBg||useSty||useTofu)){
-                cArr= parseStyledText(rawData, useTofu, useFont, useBg, useSty);
+              if(useUni && (useFont||useBg||useTofu)){
+                cArr= parseStyledText(rawData,useTofu,useFont,useBg);
               } else if(useUni){
                 cArr= unicodeCharsToBytes(rawData);
               } else {
                 cArr= stringToBinary(rawData);
               }
+              console.log("[DEBUG] cArr.length=", cArr.length);
               const outBytes= bro.decompressArray(cArr);
-              placeResult( new TextDecoder().decode(outBytes) );
+              const decStr= new TextDecoder().decode(outBytes);
+              console.log("[DEBUG] final text length=", decStr.length);
+              placeResult(decStr);
             } break;
-
             case 'zstd': {
+              console.log("[DEBUG] => Zstd => decompress");
               let cArr;
-              if(useUni && (useFont||useBg||useSty||useTofu)){
-                cArr= parseStyledText(rawData, useTofu, useFont, useBg, useSty);
+              if(useUni && (useFont||useBg||useTofu)){
+                cArr= parseStyledText(rawData,useTofu,useFont,useBg);
               } else if(useUni){
                 cArr= unicodeCharsToBytes(rawData);
               } else {
                 cArr= stringToBinary(rawData);
               }
+              console.log("[DEBUG] cArr.length=", cArr.length);
               const outBytes= window.zstdDecompress(cArr);
-              placeResult( new TextDecoder().decode(outBytes) );
+              const decStr= new TextDecoder().decode(outBytes);
+              console.log("[DEBUG] final text length=", decStr.length);
+              placeResult(decStr);
             } break;
           }
-
         } else {
-          // Convert => compress => attach prefix => store as styled or not
+          // compress
+          console.log("[DEBUG] => Convert => method:", conv);
           switch(conv){
             case 'base64': {
-              const b64 = btoa(text);
-              const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useSty, useTofu);
+              console.log("[DEBUG] => base64 => btoa");
+              const b64= btoa(text);
+              const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useTofu);
               placeResult(prefix+" "+ b64);
             } break;
-
             case 'base32k': {
-              if(useFont||useBg||useSty||useTofu){
+              if(useFont||useBg||useTofu){
                 const bytes= new TextEncoder().encode(text);
-                if(useTofu && (bytes.length%2===1)){
-                  // pad with 0 if odd
-                  const tmp= new Uint8Array(bytes.length+1);
-                  tmp.set(bytes);
-                  placeResult( prefixAndSpan(tmp) );
-                } else {
-                  placeResult( prefixAndSpan(bytes) );
-                }
+                console.log("[DEBUG] text => bytes.length=", bytes.length);
+                const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useTofu);
+                const html= makeStyledSpans(bytes,useTofu,useFont,useBg);
+                placeResult(prefix+" "+html);
               } else {
+                console.log("[DEBUG] => base32k => normal");
                 const enc= base32kEncode(text);
-                const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useSty, useTofu);
+                const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useTofu);
                 placeResult(prefix+" "+ enc);
               }
             } break;
-
             case 'gzip': {
-              const compressed= pako.deflate(text);
-              finalizeBinary(compressed);
+              console.log("[DEBUG] => GZip => pako.deflate");
+              const c= pako.deflate(text);
+              console.log("[DEBUG] pako.deflate => length=", c.length);
+              finalizeBinary(c);
             } break;
-
             case 'lzma': {
+              console.log("[DEBUG] => LZMA => compress");
               my_lzma.compress(
                 text,
                 level,
-                arr => finalizeBinary(new Uint8Array(arr)),
-                pct => console.log("Compressing LZMA:", pct*100,"%")
+                arr=>{
+                  console.log("[DEBUG] LZMA => compressed => arr len=", arr.length);
+                  finalizeBinary(new Uint8Array(arr));
+                },
+                pct=> console.log("[DEBUG] LZMA => progress:", pct*100,"%")
               );
             } break;
-
             case 'brotli': {
-              const bro=new Brotli();
+              console.log("[DEBUG] => Brotli => compress");
+              const bro= new Brotli();
               const inputBytes= new TextEncoder().encode(text);
+              console.log("[DEBUG] text => inputBytes.length=", inputBytes.length);
               const cBytes= bro.compressArray(inputBytes, level);
+              console.log("[DEBUG] => cBytes.length=", cBytes.length);
               finalizeBinary(cBytes);
             } break;
-
             case 'zstd': {
+              console.log("[DEBUG] => Zstd => compress");
               const inputBytes= new TextEncoder().encode(text);
+              console.log("[DEBUG] text => inputBytes.length=", inputBytes.length);
               const cBytes= window.zstdCompress(inputBytes, level);
+              console.log("[DEBUG] => cBytes.length=", cBytes.length);
               finalizeBinary(cBytes);
             } break;
           }
         }
 
-        function prefixAndSpan(bytesArr){
-          const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useSty, useTofu);
-          const html= makeStyledSpans(bytesArr, useTofu, useFont, useBg, useSty);
-          return prefix+" "+ html;
-        }
-
         function finalizeBinary(u8arr){
+          console.log("[DEBUG] finalizeBinary => raw compressed length:", u8arr.length);
           let out;
           if(useUni){
-            if(useFont||useBg||useSty||useTofu){
-              let data=u8arr;
-              if(useTofu && (u8arr.length%2===1)){
-                // pad last byte with 0
-                const t=new Uint8Array(u8arr.length+1);
-                t.set(u8arr);
-                data=t;
-              }
-              out= makeStyledSpans(data, useTofu, useFont, useBg, useSty);
+            if(useFont||useBg||useTofu){
+              console.log("[DEBUG] => color-coded compressed => makeStyledSpans");
+              out= makeStyledSpans(u8arr, useTofu, useFont, useBg);
             } else {
               out= bytesToUnicodeChars(u8arr);
             }
           } else {
             out= binaryToString(u8arr);
           }
-          const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useSty, useTofu);
+          const prefix= buildMagicPrefix(compType, level, useUni, useFont, useBg, useTofu);
           placeResult(prefix+" "+ out);
         }
 
       } catch(e){
-        showError("Conversion failed: "+ e.message);
+        console.error("[DEBUG] Conversion failed =>", e);
+        showError("Conversion failed: "+ (e.message||String(e)));
       }
     }
   </script>
 </head>
 <body>
   <div class="container">
-    <h1>Text Converter (Font/BG/Styles + Tofu Encoding) + Magic String</h1>
+    <h1>Debug Version: Text Converter (No Text Style Bits)</h1>
 
     <!-- Top Textarea + RLE Button -->
     <div class="textarea-container">
@@ -853,7 +801,7 @@
         <label><input type="radio" name="conversion" value="zstd"/>Zstd</label>
       </div>
 
-      <!-- We toggle display of this block for Brotli, Zstd, etc. -->
+      <!-- For Brotli/Zstd only -->
       <div id="compressionControl" class="compression-control">
         <label>
           Compression Level
@@ -863,22 +811,19 @@
       </div>
 
       <div style="text-align:center; margin: 0.5rem 0;">
-        <label><input type="checkbox" id="useUnicodeBytes">Use single Unicode char per byte (GZip, LZMA, Brotli, Zstd)</label>
+        <label><input type="checkbox" id="useUnicodeBytes">Use single Unicode char/byte (GZip, LZMA, Brotli, Zstd)</label>
       </div>
 
       <div style="text-align:center; margin: 0.3rem 0;">
-        <label><input type="checkbox" id="useFontColor">Use font color (3 extra bytes each)</label>
+        <label><input type="checkbox" id="useFontColor">Use font color (3 extra bytes/char)</label>
       </div>
 
       <div style="text-align:center; margin: 0.3rem 0;">
-        <label><input type="checkbox" id="useBgColor">Use background color (3 extra bytes each)</label>
+        <label><input type="checkbox" id="useBgColor">Use background color (3 extra bytes/char)</label>
       </div>
 
-      <div style="text-align:center; margin: 0.3rem 0;">
-        <label><input type="checkbox" id="useTextStyle">Use text style bits (1 extra byte each)</label>
-      </div>
+      <!-- NO text style bits anymore -->
 
-      <!-- NEW tofu encoding checkbox -->
       <div style="text-align:center; margin: 0.3rem 0;">
         <label><input type="checkbox" id="useTofu">Tofu encoding (2 bytes -> 1 codepoint)</label>
       </div>
